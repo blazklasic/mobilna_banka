@@ -40,27 +40,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAccountViewModel) {
-    // Observe the balance from the ViewModel
     val stanje by bankAccountViewModel.balance
+    val transactions by remember { mutableStateOf(bankAccountViewModel.transactions) }
 
-    // Declare a state variable for the user input (text input as String)
     var userInput by remember { mutableStateOf(TextFieldValue("")) }
-
-    // Declare a state variable to show an error message if input is invalid
     var errorMessage by remember { mutableStateOf("") }
+    var showTransactions by remember { mutableStateOf(false) } // State to toggle transaction visibility
 
-    // Main layout of the screen
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
     ) {
-        // Top dark blue area
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(75.dp) // Adjust the height as needed
-                .background(Color(0xFF003366)) // Dark blue color
+                .height(75.dp)
+                .background(Color(0xFF003366))
         ) {
             Text(
                 text = "Mobilna Banka",
@@ -72,20 +68,18 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp)) // Space between the top section and the account info
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Številka računa: SI56192001234567892", // Example account number
+            text = "Številka računa: SI56192001234567892",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        // Display the current stanje (balance) from the ViewModel
         Text(
             text = "Trenutno stanje: ${"%.2f".format(stanje)}€",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // TextField to input amount (polog or dvig)
         OutlinedTextField(
             value = userInput,
             onValueChange = { userInput = it },
@@ -95,7 +89,6 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                 .padding(bottom = 16.dp)
         )
 
-        // Display error message if the input is invalid
         if (errorMessage.isNotEmpty()) {
             Text(
                 text = errorMessage,
@@ -104,15 +97,14 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
             )
         }
 
-        // Button to polog money
         Button(
             onClick = {
-                val amount = userInput.text.toDoubleOrNull() // Convert the input to Double
+                val amount = userInput.text.toDoubleOrNull()
                 if (amount != null && amount > 0) {
-                    bankAccountViewModel.updateBalance(stanje + amount) // polog the amount
-                    errorMessage = "" // Clear error message
+                    bankAccountViewModel.updateBalance(stanje + amount, "Polog: +${"%.2f".format(amount)}€")
+                    errorMessage = ""
                 } else {
-                    errorMessage = "Prosim vnesite veljavno pozitivno število." // Show error if input is invalid
+                    errorMessage = "Prosim vnesite veljavno pozitivno število."
                 }
             },
             modifier = Modifier
@@ -122,25 +114,42 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
             Text(text = "Polog")
         }
 
-        // Button to dvig money
         Button(
             onClick = {
                 val amount = userInput.text.toDoubleOrNull()
                 if (amount != null && amount > 0 && amount <= stanje) {
-                    bankAccountViewModel.updateBalance(stanje - amount) // dvig the amount
-                    errorMessage = "" // Clear error message
+                    bankAccountViewModel.updateBalance(stanje - amount, "Dvig: -${"%.2f".format(amount)}€")
+                    errorMessage = ""
                 } else if (amount == null || amount <= 0) {
                     errorMessage = "Prosim vnesite veljavno pozitivno število."
                 } else {
                     errorMessage = "Nezadostno stanje na računu"
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
         ) {
             Text(text = "Dvig")
         }
+
+        Button(
+            onClick = { showTransactions = !showTransactions }, // Toggle visibility
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = if (showTransactions) "Skrij transakcije" else "Prikaži transakcije")
+        }
+
+        if (showTransactions) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Zadnjih 5 transakcij:", style = MaterialTheme.typography.headlineMedium)
+            for (transaction in transactions.reversed()) {
+                Text(text = transaction, modifier = Modifier.padding(4.dp))
+            }
+        }
     }
 }
+
 
 
 class BankAccountViewModel(private val context: Context) : ViewModel() {
@@ -148,13 +157,17 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
     private val _balance = mutableStateOf(500.0) // Default balance is 500.0
     val balance: State<Double> get() = _balance
 
+    private val _transactions = mutableStateListOf<String>() // List to store transaction history
+    val transactions: List<String> get() = _transactions
+
     init {
-        // Load the saved balance from SharedPreferences when the ViewModel is created
-        _balance.value = getBalance()
+        // Load the saved balance and transactions when the ViewModel is created
+        _balance.value = loadBalance()
+        _transactions.addAll(loadTransactions())
     }
 
     // Retrieve the saved balance from SharedPreferences
-    private fun getBalance(): Double {
+    private fun loadBalance(): Double {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         return sharedPreferences.getFloat("stanje", 500.0f).toDouble()  // Default balance is 500.0
     }
@@ -168,10 +181,37 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    // Retrieve transaction history from SharedPreferences
+    private fun loadTransactions(): List<String> {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        val savedTransactions = sharedPreferences.getStringSet("transakcije", emptySet())
+        return savedTransactions?.toList() ?: emptyList()
+    }
+
+    // Save transaction history to SharedPreferences
+    private fun saveTransactions() {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        with(sharedPreferences.edit()) {
+            putStringSet("transakcije", _transactions.toSet())
+            apply()
+        }
+    }
+
     // Update balance and save it
-    fun updateBalance(newBalance: Double) {
+    fun updateBalance(newBalance: Double, transaction: String) {
         _balance.value = newBalance
         saveBalance(newBalance)  // Save the new balance
+        addTransaction(transaction)  // Add the transaction
+    }
+
+    // Add a new transaction and save the history
+    private fun addTransaction(transaction: String) {
+        if (_transactions.size >= 5) {
+            _transactions.removeFirst() // Remove the oldest transaction if we exceed 5
+        }
+        _transactions.add(transaction)
+        saveTransactions() // Save updated transactions
     }
 }
+
 

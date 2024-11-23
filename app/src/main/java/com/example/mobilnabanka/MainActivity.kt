@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 
 class MainActivity : ComponentActivity() {
@@ -44,12 +45,14 @@ class MainActivity : ComponentActivity() {
                 // Navigation Setup
                 val navController = rememberNavController()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    NavHost(navController = navController, startDestination = "bank_account_screen") {
+                    NavHost(navController = navController, startDestination = "login_screen") {
+                        composable("login_screen") {
+                            LoginScreen(navController)
+                        }
                         composable("bank_account_screen") {
                             BankAccountScreen(innerPadding, bankAccountViewModel, navController)
                         }
                         composable("transaction_screen") {
-                            // Pass navController to TransactionScreen
                             TransactionScreen(bankAccountViewModel, navController)
                         }
                     }
@@ -58,13 +61,91 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LoginScreen(navController: NavHostController) {
+    val context = LocalContext.current  // Get the context here
+    var accountNumber by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
 
+    // SharedPreferences access
+    val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color(0xFF003366),
+                    titleContentColor = Color.White,
+                ),
+                title = {
+                    Text("Vpis v Mobilno Banko")
+                }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Vnesite številko svojega bančnega računa za vpis:",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            OutlinedTextField(
+                value = accountNumber,
+                onValueChange = { accountNumber = it },
+                label = { Text("Številka računa") },
+                modifier = Modifier.fillMaxWidth(),
+                isError = errorMessage.isNotEmpty()
+            )
+
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = Color.Red,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    if (accountNumber.isNotEmpty()) {
+                        // Save the account number in SharedPreferences
+                        with(sharedPreferences.edit()) {
+                            putString("account_number", accountNumber)
+                            apply()
+                        }
+                        navController.navigate("bank_account_screen")
+                    } else {
+                        errorMessage = "Vnesti morate številko bančnega računa."
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Vpis")
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAccountViewModel, navController: NavHostController) {
+    val context = LocalContext.current  // Get the context here
     val stanje by bankAccountViewModel.balance
     val transactions by remember { mutableStateOf(bankAccountViewModel.transactions) }
+
+    // Retrieve the account number from SharedPreferences
+    val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+    val accountNumber = sharedPreferences.getString("account_number", "Unknown Account") ?: "Unknown Account"
 
     var userInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
@@ -113,7 +194,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
         ) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Številka računa: SI56192001234567892",
+                text = "Številka računa: $accountNumber",  // Display the saved account number
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -144,7 +225,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                 onClick = {
                     val amount = userInput.toDoubleOrNull()
                     if (amount != null && amount > 0) {
-                        bankAccountViewModel.updateBalance(stanje + amount, "Polog: +${"%.2f".format(amount)}€")
+                        bankAccountViewModel.updateBalance(stanje + amount, "Polog", amount)
                         errorMessage = ""
                     } else {
                         errorMessage = "Prosim vnesite veljavno pozitivno število."
@@ -161,7 +242,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                 onClick = {
                     val amount = userInput.toDoubleOrNull()
                     if (amount != null && amount > 0 && amount <= stanje) {
-                        bankAccountViewModel.updateBalance(stanje - amount, "Dvig: -${"%.2f".format(amount)}€")
+                        bankAccountViewModel.updateBalance(stanje - amount, "Dvig", amount)
                         errorMessage = ""
                     } else if (amount == null || amount <= 0) {
                         errorMessage = "Prosim vnesite veljavno pozitivno število."
@@ -186,11 +267,15 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController: NavHostController) {
     val depositSum = bankAccountViewModel.getDepositSum()
     val withdrawalSum = bankAccountViewModel.getWithdrawalSum()
+
+    var showDeposits by remember { mutableStateOf(false) }
+    var showWithdrawals by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -216,7 +301,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* tri crtice desno zgornji kot */ }) {
+                    IconButton(onClick = { /* Handle menu button action */ }) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
@@ -226,6 +311,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
             )
         }
     ) { innerPadding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -248,13 +334,63 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            BarChart(
-                depositSum = depositSum,
-                withdrawalSum = withdrawalSum,
+            // Add buttons for showing deposits and withdrawals
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp)
-                    .padding(start = 65.dp)
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Button(
+                    onClick = { showDeposits = true; showWithdrawals = false },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = "Pologi")
+                }
+
+                Button(
+                    onClick = { showWithdrawals = true; showDeposits = false },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = "Dvigi")
+                }
+            }
+
+            // Show transactions based on the selected button
+            if (showDeposits) {
+                TransactionList(
+                    transactions = bankAccountViewModel.transactions
+                        .filter { it.type == "Polog" }
+                        .reversed()  // Reverse the list to show the most recent transactions first
+                )
+            } else if (showWithdrawals) {
+                TransactionList(
+                    transactions = bankAccountViewModel.transactions
+                        .filter { it.type == "Dvig" }
+                        .reversed()  // Reverse the list to show the most recent transactions first
+                )
+            } else {
+                BarChart(
+                    depositSum = depositSum,
+                    withdrawalSum = withdrawalSum,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .padding(start = 65.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TransactionList(transactions: List<Transaction>) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        transactions.forEach { transaction ->
+            Text(
+                text = "${transaction.type}: ${"%.2f".format(transaction.amount)}€ - ${transaction.timestamp}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 8.dp)
             )
         }
     }
@@ -308,13 +444,14 @@ fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Mod
 }
 
 data class BarData(val category: String, val value: Double)
+data class Transaction(val type: String, val amount: Double, val timestamp: String)
 
 class BankAccountViewModel(private val context: Context) : ViewModel() {
     private val _balance = mutableStateOf(500.0)
     val balance: State<Double> get() = _balance
 
-    private val _transactions = mutableStateListOf<String>()
-    val transactions: List<String> get() = _transactions
+    private val _transactions = mutableStateListOf<Transaction>()
+    val transactions: List<Transaction> get() = _transactions
 
     init {
         _balance.value = loadBalance()
@@ -334,37 +471,50 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    private fun loadTransactions(): List<String> {
+    private fun loadTransactions(): List<Transaction> {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         val savedTransactions = sharedPreferences.getStringSet("transakcije", emptySet())
-        return savedTransactions?.toList() ?: emptyList()
+        return savedTransactions?.mapNotNull {
+            // Convert the saved transaction string back to Transaction object
+            it.split("|").takeIf { it.size == 3 }?.let { parts ->
+                Transaction(parts[0], parts[1].toDoubleOrNull() ?: 0.0, parts[2])
+            }
+        } ?: emptyList()
     }
 
     private fun saveTransactions() {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         with(sharedPreferences.edit()) {
-            putStringSet("transakcije", _transactions.toSet())
+            putStringSet("transakcije", _transactions.map {
+                "${it.type}|${it.amount}|${it.timestamp}"
+            }.toSet())
             apply()
         }
     }
 
-    fun updateBalance(newBalance: Double, transaction: String) {
+    fun updateBalance(newBalance: Double, type: String, amount: Double) {
         _balance.value = newBalance
         saveBalance(newBalance)
+
+        val timestamp = System.currentTimeMillis().let {
+            java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(it)
+        }
+        val transaction = Transaction(type, amount, timestamp)
         addTransaction(transaction)
     }
 
-    private fun addTransaction(transaction: String) {
+    private fun addTransaction(transaction: Transaction) {
         _transactions.add(transaction)
         saveTransactions()
     }
+
     fun getDepositSum(): Double {
-        return _transactions.filter { it.startsWith("Polog") }
-            .sumOf { transaction -> transaction.substringAfter(": +").removeSuffix("€").toDoubleOrNull() ?: 0.0 }
+        return _transactions.filter { it.type == "Polog" }
+            .sumOf { it.amount }
     }
 
     fun getWithdrawalSum(): Double {
-        return _transactions.filter { it.startsWith("Dvig") }
-            .sumOf { transaction -> transaction.substringAfter(": -").removeSuffix("€").toDoubleOrNull() ?: 0.0 }
+        return _transactions.filter { it.type == "Dvig" }
+            .sumOf { it.amount }
     }
 }

@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MobilnaBankaTheme {
-                // Navigation Setup
+
                 val navController = rememberNavController()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavHost(navController = navController, startDestination = "login_screen") {
@@ -60,11 +60,11 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(navController: NavHostController) {
-    val context = LocalContext.current  // Get the context here
+    val context = LocalContext.current
     var accountNumber by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
 
-    // SharedPreferences access
+
     val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
 
     Scaffold(
@@ -161,7 +161,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { /* Puscica nazaj */ }) {
+                    IconButton(onClick = {}) {
                         Icon(
                             imageVector = Icons.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -169,7 +169,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Desni kot tri crtice */ }) {
+                    IconButton(onClick = {}) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
@@ -294,7 +294,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Desni kot tri crtice */ }) {
+                    IconButton(onClick = {}) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
@@ -399,7 +399,6 @@ fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Mod
         val barWidth = size.width / (data.size * 2)
         val spaceBetweenBars = barWidth
 
-        // Draw bars
         data.forEachIndexed { index, item ->
             val barHeight = size.height * (item.value / maxValue)
             val barLeft = index * (barWidth * 2)

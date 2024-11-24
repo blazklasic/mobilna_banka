@@ -6,9 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -21,16 +19,14 @@ import androidx.navigation.compose.*
 import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.ArrowBack // Correct import for ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 
 class MainActivity : ComponentActivity() {
     private val bankAccountViewModel: BankAccountViewModel by lazy {
@@ -118,7 +114,6 @@ fun LoginScreen(navController: NavHostController) {
             Button(
                 onClick = {
                     if (accountNumber.isNotEmpty()) {
-                        // Save the account number in SharedPreferences
                         with(sharedPreferences.edit()) {
                             putString("account_number", accountNumber)
                             apply()
@@ -139,11 +134,10 @@ fun LoginScreen(navController: NavHostController) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAccountViewModel, navController: NavHostController) {
-    val context = LocalContext.current  // Get the context here
+    val context = LocalContext.current
     val stanje by bankAccountViewModel.balance
     val transactions by remember { mutableStateOf(bankAccountViewModel.transactions) }
 
-    // Retrieve the account number from SharedPreferences
     val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
     val accountNumber = sharedPreferences.getString("account_number", "Unknown Account") ?: "Unknown Account"
 
@@ -156,8 +150,8 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
         topBar = {
             CenterAlignedTopAppBar(
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color(0xFF003366), // Dark blue for top bar
-                    titleContentColor = Color.White, // White for title
+                    containerColor = Color(0xFF003366),
+                    titleContentColor = Color.White,
                 ),
                 title = {
                     Text(
@@ -167,17 +161,17 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { /* Handle back button action */ }) {
+                    IconButton(onClick = { /* Puscica nazaj */ }) {
                         Icon(
-                            imageVector = Icons.Filled.ArrowBack, // Correct ArrowBack icon
+                            imageVector = Icons.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Handle menu button action */ }) {
+                    IconButton(onClick = { /* Desni kot tri crtice */ }) {
                         Icon(
-                            imageVector = Icons.Filled.Menu, // Menu icon
+                            imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
                         )
                     }
@@ -186,7 +180,6 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
             )
         }
     ) { innerPadding ->
-        // The main content of the screen
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -194,7 +187,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
         ) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Številka računa: $accountNumber",  // Display the saved account number
+                text = "Številka računa: $accountNumber",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -258,7 +251,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
             }
 
             Button(
-                onClick = { navController.navigate("transaction_screen") }, // Navigate to Transaction Screen
+                onClick = { navController.navigate("transaction_screen") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = "Prikaži transakcije")
@@ -301,7 +294,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Handle menu button action */ }) {
+                    IconButton(onClick = { /* Desni kot tri crtice */ }) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
@@ -333,8 +326,6 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
-
-            // Add buttons for showing deposits and withdrawals
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -356,18 +347,17 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 }
             }
 
-            // Show transactions based on the selected button
             if (showDeposits) {
                 TransactionList(
                     transactions = bankAccountViewModel.transactions
                         .filter { it.type == "Polog" }
-                        .reversed()  // Reverse the list to show the most recent transactions first
+                        .reversed()
                 )
             } else if (showWithdrawals) {
                 TransactionList(
                     transactions = bankAccountViewModel.transactions
                         .filter { it.type == "Dvig" }
-                        .reversed()  // Reverse the list to show the most recent transactions first
+                        .reversed()
                 )
             } else {
                 BarChart(
@@ -404,38 +394,33 @@ fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Mod
         BarData("Dvigi", withdrawalSum)
     )
 
-    // Call the Canvas-based chart
     Canvas(modifier = modifier) {
-        // Define max value for scaling the bars
-        val maxValue = data.maxOfOrNull { it.value } ?: 1.0 // Ensure there's no divide by zero
-        val barWidth = size.width / (data.size * 2) // Bar width based on the screen size and number of bars
-        val spaceBetweenBars = barWidth // Space between bars
+        val maxValue = data.maxOfOrNull { it.value } ?: 1.0
+        val barWidth = size.width / (data.size * 2)
+        val spaceBetweenBars = barWidth
 
         // Draw bars
         data.forEachIndexed { index, item ->
-            val barHeight = size.height * (item.value / maxValue) // Bar height proportional to value
-            val barLeft = index * (barWidth * 2) // Position of the bar (left)
-            val barTop = size.height - barHeight // Position of the bar (top)
+            val barHeight = size.height * (item.value / maxValue)
+            val barLeft = index * (barWidth * 2)
+            val barTop = size.height - barHeight
 
-            // Draw the bar using a rectangle
             drawRect(
                 color = if (item.category == "Pologi") Color.Green else Color.Red,
                 topLeft = Offset(barLeft, barTop.toFloat()),
                 size = Size(barWidth, barHeight.toFloat())
             )
 
-            // Draw the label under the bar
             drawIntoCanvas { canvas ->
                 val paint = android.text.TextPaint().apply {
-                    color = Color.Black.toArgb() // Convert Compose Color to Android Color
-                    textSize = 40f // Text size in pixels
+                    color = Color.Black.toArgb()
+                    textSize = 40f
                 }
 
-                // Draw the category text below the bar
                 canvas.nativeCanvas.drawText(
                     item.category,
                     barLeft + barWidth / 2,
-                    size.height - 10f, // Position below the bar
+                    size.height - 10f,
                     paint
                 )
             }
@@ -475,7 +460,6 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         val savedTransactions = sharedPreferences.getStringSet("transakcije", emptySet())
         return savedTransactions?.mapNotNull {
-            // Convert the saved transaction string back to Transaction object
             it.split("|").takeIf { it.size == 3 }?.let { parts ->
                 Transaction(parts[0], parts[1].toDoubleOrNull() ?: 0.0, parts[2])
             }

@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 @Composable
 fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAccountViewModel) {
     val stanje by bankAccountViewModel.balance

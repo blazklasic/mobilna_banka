@@ -1,7 +1,11 @@
 package com.example.mobilnabanka
 
+import android.app.Activity
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,9 +18,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
-import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ArrowBack
@@ -27,21 +31,29 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 
 class MainActivity : ComponentActivity() {
     private val bankAccountViewModel: BankAccountViewModel by lazy {
         BankAccountViewModel(applicationContext)
     }
 
+    private lateinit var sharedPreferences: SharedPreferences
+    private var savedAccountNumber: String? = null
+    var showDialog by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
         setContent {
             MobilnaBankaTheme {
-                // Navigation Setup
                 val navController = rememberNavController()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    NavHost(navController = navController, startDestination = "login_screen") {
+                    NavHost(navController = navController, startDestination = if (savedAccountNumber != null) "bank_account_screen" else "login_screen") {
                         composable("login_screen") {
                             LoginScreen(navController)
                         }
@@ -53,18 +65,64 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                if (showDialog) {
+                    ShowSaveDeleteDialog(onDismiss = { showDialog = false })
+                }
             }
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        sharedPreferences = getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        savedAccountNumber = sharedPreferences.getString("account_number", null)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (savedAccountNumber != null) {
+            showDialog = true
+        }
+    }
 }
+
+@Composable
+fun ShowSaveDeleteDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Želite shraniti račun?") },
+        text = { Text("Ali želite shraniti podatke o računa za lažjo ponovno prijavo?") },
+        confirmButton = {
+            Button(onClick = {
+                Toast.makeText(context, "Podatki računa shranjeni.", Toast.LENGTH_SHORT).show()
+                onDismiss()
+                (context as? Activity)?.finish()
+            }) {
+                Text("Shrani")
+            }
+        },
+        dismissButton = {
+            Button(onClick = {
+                val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+                sharedPreferences.edit().remove("account_number").apply()
+                Toast.makeText(context, "Izpis uspešen.", Toast.LENGTH_SHORT).show()
+                onDismiss()
+                (context as? Activity)?.finish()
+            }) {
+                Text("Izpis")
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(navController: NavHostController) {
-    val context = LocalContext.current  // Get the context here
+    val context = LocalContext.current
     var accountNumber by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
 
-    // SharedPreferences access
     val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
 
     Scaffold(
@@ -135,7 +193,7 @@ fun LoginScreen(navController: NavHostController) {
 @Composable
 fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAccountViewModel, navController: NavHostController) {
     val context = LocalContext.current
-    val stanje by bankAccountViewModel.balance
+    val stanje by bankAccountViewModel.balance.collectAsState()
     val transactions by remember { mutableStateOf(bankAccountViewModel.transactions) }
 
     val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
@@ -143,8 +201,6 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
 
     var userInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
-
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
 
     Scaffold(
         topBar = {
@@ -161,7 +217,11 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { /* Puscica nazaj */ }) {
+                    IconButton(onClick = {
+                        (context as? MainActivity)?.let { activity ->
+                            activity.showDialog = true
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -169,14 +229,13 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Desni kot tri crtice */ }) {
+                    IconButton(onClick = { /* Menu action */ }) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
                         )
                     }
-                },
-                scrollBehavior = scrollBehavior,
+                }
             )
         }
     ) { innerPadding ->
@@ -260,7 +319,6 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
     }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController: NavHostController) {
@@ -294,7 +352,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Desni kot tri crtice */ }) {
+                    IconButton(onClick = { /* Menu action */ }) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
@@ -304,7 +362,6 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
             )
         }
     ) { innerPadding ->
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -326,6 +383,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -386,7 +444,6 @@ fun TransactionList(transactions: List<Transaction>) {
     }
 }
 
-
 @Composable
 fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Modifier) {
     val data = listOf(
@@ -412,16 +469,14 @@ fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Mod
             )
 
             drawIntoCanvas { canvas ->
-                val paint = android.text.TextPaint().apply {
-                    color = Color.Black.toArgb()
-                    textSize = 40f
-                }
-
                 canvas.nativeCanvas.drawText(
                     item.category,
                     barLeft + barWidth / 2,
                     size.height - 10f,
-                    paint
+                    android.graphics.Paint().apply {
+                        color = android.graphics.Color.BLACK
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
                 )
             }
         }
@@ -429,31 +484,26 @@ fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Mod
 }
 
 data class BarData(val category: String, val value: Double)
+
 data class Transaction(val type: String, val amount: Double, val timestamp: String)
 
 class BankAccountViewModel(private val context: Context) : ViewModel() {
-    private val _balance = mutableStateOf(500.0)
-    val balance: State<Double> get() = _balance
 
-    private val _transactions = mutableStateListOf<Transaction>()
-    val transactions: List<Transaction> get() = _transactions
+    private val _balance = MutableStateFlow(500.0)
+    val balance: StateFlow<Double> = _balance
+
+    private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
+    val transactions: List<Transaction>
+        get() = _transactions.value
 
     init {
         _balance.value = loadBalance()
-        _transactions.addAll(loadTransactions())
+        _transactions.value = loadTransactions()
     }
 
     private fun loadBalance(): Double {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         return sharedPreferences.getFloat("stanje", 500.0f).toDouble()
-    }
-
-    private fun saveBalance(stanje: Double) {
-        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
-        with(sharedPreferences.edit()) {
-            putFloat("stanje", stanje.toFloat())
-            apply()
-        }
     }
 
     private fun loadTransactions(): List<Transaction> {
@@ -466,14 +516,13 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         } ?: emptyList()
     }
 
-    private fun saveTransactions() {
+    fun saveBalance(stanje: Double) {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         with(sharedPreferences.edit()) {
-            putStringSet("transakcije", _transactions.map {
-                "${it.type}|${it.amount}|${it.timestamp}"
-            }.toSet())
+            putFloat("stanje", stanje.toFloat())
             apply()
         }
+        _balance.value = stanje
     }
 
     fun updateBalance(newBalance: Double, type: String, amount: Double) {
@@ -488,17 +537,27 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun addTransaction(transaction: Transaction) {
-        _transactions.add(transaction)
+        _transactions.value = _transactions.value + transaction
         saveTransactions()
     }
 
+    private fun saveTransactions() {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        with(sharedPreferences.edit()) {
+            putStringSet("transakcije", _transactions.value.map {
+                "${it.type}|${it.amount}|${it.timestamp}"
+            }.toSet())
+            apply()
+        }
+    }
+
     fun getDepositSum(): Double {
-        return _transactions.filter { it.type == "Polog" }
+        return _transactions.value.filter { it.type == "Polog" }
             .sumOf { it.amount }
     }
 
     fun getWithdrawalSum(): Double {
-        return _transactions.filter { it.type == "Dvig" }
+        return _transactions.value.filter { it.type == "Dvig" }
             .sumOf { it.amount }
     }
 }

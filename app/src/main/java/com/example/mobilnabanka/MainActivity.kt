@@ -1,14 +1,16 @@
 package com.example.mobilnabanka
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -18,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
 import androidx.compose.material.icons.Icons
@@ -29,12 +30,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collect
 
 class MainActivity : ComponentActivity() {
     private val bankAccountViewModel: BankAccountViewModel by lazy {
@@ -45,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private var savedAccountNumber: String? = null
     var showDialog by mutableStateOf(false)
 
+    @RequiresApi(Build.VERSION_CODES.GINGERBREAD)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -53,7 +53,10 @@ class MainActivity : ComponentActivity() {
             MobilnaBankaTheme {
                 val navController = rememberNavController()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    NavHost(navController = navController, startDestination = if (savedAccountNumber != null) "bank_account_screen" else "login_screen") {
+                    NavHost(
+                        navController = navController,
+                        startDestination = if (savedAccountNumber != null) "bank_account_screen" else "login_screen"
+                    ) {
                         composable("login_screen") {
                             LoginScreen(navController)
                         }
@@ -86,6 +89,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.GINGERBREAD)
 @Composable
 fun ShowSaveDeleteDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -116,6 +120,7 @@ fun ShowSaveDeleteDialog(onDismiss: () -> Unit) {
     )
 }
 
+@RequiresApi(Build.VERSION_CODES.GINGERBREAD)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(navController: NavHostController) {
@@ -319,11 +324,13 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
     }
 }
 
+@SuppressLint("StateFlowValueCalledInComposition")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController: NavHostController) {
     val depositSum = bankAccountViewModel.getDepositSum()
     val withdrawalSum = bankAccountViewModel.getWithdrawalSum()
+    val balance = bankAccountViewModel.balance.value
 
     var showDeposits by remember { mutableStateOf(false) }
     var showWithdrawals by remember { mutableStateOf(false) }
@@ -366,75 +373,78 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(16.dp)
         ) {
+            // Display current balance
             Text(
-                text = "Zgodovina transakcij:",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            Text(
-                text = "Skupaj pologi: ${"%.2f".format(depositSum)}€",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
+                text = "Trenutno stanje: ${"%.2f".format(balance)}€",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
 
+            // Show deposit total
             Text(
-                text = "Skupaj dvigi: ${"%.2f".format(withdrawalSum)}€",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
+                text = "Skupni znesek pologov: ${"%.2f".format(depositSum)}€",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
+            Button(
+                onClick = { showDeposits = !showDeposits },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Button(
-                    onClick = { showDeposits = true; showWithdrawals = false },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = "Pologi")
-                }
+                Text(if (showDeposits) "Skrij pologe" else "Pokaži pologe")
+            }
 
-                Button(
-                    onClick = { showWithdrawals = true; showDeposits = false },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = "Dvigi")
+            // Show deposits only if showDeposits is true
+            if (showDeposits) {
+                bankAccountViewModel.getDepositTransactions().reversed().forEach { transaction ->
+                    Text(
+                        text = "Datum: ${transaction.timestamp}, Znesek: ${"%.2f".format(transaction.amount)}€",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
 
-            if (showDeposits) {
-                TransactionList(
-                    transactions = bankAccountViewModel.transactions
-                        .filter { it.type == "Polog" }
-                        .reversed()
-                )
-            } else if (showWithdrawals) {
-                TransactionList(
-                    transactions = bankAccountViewModel.transactions
-                        .filter { it.type == "Dvig" }
-                        .reversed()
-                )
-            } else {
-                BarChart(
-                    depositSum = depositSum,
-                    withdrawalSum = withdrawalSum,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .padding(start = 65.dp)
-                )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Show withdrawal total
+            Text(
+                text = "Skupni znesek dvigov: ${"%.2f".format(withdrawalSum)}€",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Button(
+                onClick = { showWithdrawals = !showWithdrawals },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showWithdrawals) "Skrij dvige" else "Pokaži dvige")
+            }
+
+            // Show withdrawals only if showWithdrawals is true
+            if (showWithdrawals) {
+                bankAccountViewModel.getWithdrawalTransactions().reversed().forEach { transaction ->
+                    Text(
+                        text = "Datum: ${transaction.timestamp}, Znesek: ${"%.2f".format(transaction.amount)}€",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         }
     }
 }
 
-@Composable
-fun TransactionList(transactions: List<Transaction>) {
+            @Composable
+fun TransactionList(transactions: List<Transaction>, filterCategory: String? = null) {
+    val filteredTransactions = filterCategory?.let {
+        transactions.filter { it.type == filterCategory }
+    } ?: transactions
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        transactions.forEach { transaction ->
+        filteredTransactions.forEach { transaction ->
             Text(
                 text = "${transaction.type}: ${"%.2f".format(transaction.amount)}€ - ${transaction.timestamp}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -445,26 +455,25 @@ fun TransactionList(transactions: List<Transaction>) {
 }
 
 @Composable
-fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Modifier) {
-    val data = listOf(
-        BarData("Pologi", depositSum),
-        BarData("Dvigi", withdrawalSum)
-    )
+fun BarChart(transactions: List<Transaction>, modifier: Modifier = Modifier) {
+    val groupedData = transactions.groupBy { it.type }
+        .mapValues { entry -> entry.value.sumOf { it.amount } }
+
+    val data = groupedData.map { BarData(it.key, it.value) }
 
     Canvas(modifier = modifier) {
         val maxValue = data.maxOfOrNull { it.value } ?: 1.0
         val barWidth = size.width / (data.size * 2)
-        val spaceBetweenBars = barWidth
+        val spaceBetweenBars = barWidth / 2
 
-        // Draw bars
         data.forEachIndexed { index, item ->
             val barHeight = size.height * (item.value / maxValue)
-            val barLeft = index * (barWidth * 2)
+            val barLeft = index * (barWidth + spaceBetweenBars)
             val barTop = size.height - barHeight
 
             drawRect(
                 color = if (item.category == "Pologi") Color.Green else Color.Red,
-                topLeft = Offset(barLeft, barTop.toFloat()),
+                topLeft = Offset(barLeft.toFloat(), barTop.toFloat()),
                 size = Size(barWidth, barHeight.toFloat())
             )
 
@@ -485,11 +494,12 @@ fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Mod
 
 data class BarData(val category: String, val value: Double)
 
-data class Transaction(val type: String, val amount: Double, val timestamp: String)
+data class Transaction(val type: String, val amount: Double, val timestamp: String, val category: String)
+data class Account(val name: String, val balance: Double)
 
 class BankAccountViewModel(private val context: Context) : ViewModel() {
 
-    private val _balance = MutableStateFlow(500.0)
+    private val _balance = MutableStateFlow(500.0) // Default balance
     val balance: StateFlow<Double> = _balance
 
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
@@ -500,64 +510,179 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         _balance.value = loadBalance()
         _transactions.value = loadTransactions()
     }
+    private val _accounts = MutableStateFlow<List<Account>>(emptyList())
+    val accounts: StateFlow<List<Account>> = _accounts
 
-    private fun loadBalance(): Double {
-        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
-        return sharedPreferences.getFloat("stanje", 500.0f).toDouble()
+    init {
+        _accounts.value = loadAccounts()  // Load saved accounts on initialization
     }
 
-    private fun loadTransactions(): List<Transaction> {
+    // Load accounts from SharedPreferences
+    private fun loadAccounts(): List<Account> {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
-        val savedTransactions = sharedPreferences.getStringSet("transakcije", emptySet())
-        return savedTransactions?.mapNotNull {
-            it.split("|").takeIf { it.size == 3 }?.let { parts ->
-                Transaction(parts[0], parts[1].toDoubleOrNull() ?: 0.0, parts[2])
+        val savedAccounts = sharedPreferences.getStringSet("accounts", emptySet())
+
+        return savedAccounts?.mapNotNull {
+            it.split("|").takeIf { it.size == 2 }?.let { parts ->
+                Account(parts[0], parts[1].toDoubleOrNull() ?: 0.0)
             }
         } ?: emptyList()
     }
 
-    fun saveBalance(stanje: Double) {
+    // Save accounts to SharedPreferences
+    private fun saveAccounts() {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         with(sharedPreferences.edit()) {
-            putFloat("stanje", stanje.toFloat())
-            apply()
-        }
-        _balance.value = stanje
-    }
-
-    fun updateBalance(newBalance: Double, type: String, amount: Double) {
-        _balance.value = newBalance
-        saveBalance(newBalance)
-
-        val timestamp = System.currentTimeMillis().let {
-            java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(it)
-        }
-        val transaction = Transaction(type, amount, timestamp)
-        addTransaction(transaction)
-    }
-
-    private fun addTransaction(transaction: Transaction) {
-        _transactions.value = _transactions.value + transaction
-        saveTransactions()
-    }
-
-    private fun saveTransactions() {
-        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
-        with(sharedPreferences.edit()) {
-            putStringSet("transakcije", _transactions.value.map {
-                "${it.type}|${it.amount}|${it.timestamp}"
+            putStringSet("accounts", _accounts.value.map {
+                "${it.name}|${it.balance}"
             }.toSet())
             apply()
         }
     }
 
+    // Add a new account
+    fun addAccount(name: String, balance: Double) {
+        val newAccount = Account(name, balance)
+        _accounts.value = _accounts.value + newAccount
+        saveAccounts()  // Save after adding the account
+    }
+
+    // Update the balance of an existing account
+    fun updateAccountBalance(name: String, newBalance: Double) {
+        _accounts.value = _accounts.value.map {
+            if (it.name == name) {
+                it.copy(balance = newBalance)  // Update balance using copy
+            } else {
+                it
+            }
+        }
+        saveAccounts()  // Save after updating the balance
+    }
+
+    // Get account by name
+    fun getAccountByName(name: String): Account? {
+        return _accounts.value.find { it.name == name }
+    }
+
+    // Add deposit to a specific account
+    fun addDepositToAccount(name: String, amount: Double) {
+        val account = getAccountByName(name)
+        if (account != null) {
+            val updatedBalance = account.balance + amount
+            updateAccountBalance(name, updatedBalance)  // Update balance
+        }
+    }
+
+    // Add withdrawal from a specific account
+    fun addWithdrawalFromAccount(name: String, amount: Double) {
+        val account = getAccountByName(name)
+        if (account != null) {
+            val updatedBalance = account.balance - amount
+            if (updatedBalance >= 0) {
+                updateAccountBalance(name, updatedBalance)  // Update balance
+            } else {
+                // Handle insufficient balance case
+                println("Insufficient balance for withdrawal!")
+            }
+        }
+    }
+    // Load the initial balance from SharedPreferences
+    private fun loadBalance(): Double {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        return sharedPreferences.getFloat("stanje", 500.0f).toDouble()
+    }
+
+    // Load transactions from SharedPreferences
+    private fun loadTransactions(): List<Transaction> {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        val savedTransactions = sharedPreferences.getStringSet("transakcije", emptySet())
+        return savedTransactions?.mapNotNull {
+            it.split("|").takeIf { it.size == 4 }?.let { parts ->
+                Transaction(parts[0], parts[1].toDoubleOrNull() ?: 0.0, parts[2], parts[3])
+            }
+        } ?: emptyList()
+    }
+
+    // Add a deposit transaction and update the balance
+    fun addDeposit(amount: Double, timestamp: String) {
+        val transaction = Transaction("Polog", amount, timestamp, "Income")
+        addTransaction(transaction)
+        _balance.value += amount
+        saveBalance(_balance.value)  // Save balance after update
+    }
+
+    // Add a withdrawal transaction and update the balance
+    fun addWithdrawal(amount: Double, timestamp: String) {
+        val transaction = Transaction("Dvig", amount, timestamp, "Expense")
+        addTransaction(transaction)
+        _balance.value -= amount
+        saveBalance(_balance.value)  // Save balance after update
+    }
+
+    // Save a transaction to the list
+    private fun addTransaction(transaction: Transaction) {
+        _transactions.value = _transactions.value + transaction
+        saveTransactions()
+    }
+
+    // Save transactions to SharedPreferences
+    private fun saveTransactions() {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        with(sharedPreferences.edit()) {
+            putStringSet("transakcije", _transactions.value.map {
+                "${it.type}|${it.amount}|${it.timestamp}|${it.category}"
+            }.toSet())
+            apply()
+        }
+    }
+
+    // Save the current balance to SharedPreferences
+    private fun saveBalance(stanje: Double) {
+        val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+        with(sharedPreferences.edit()) {
+            putFloat("stanje", stanje.toFloat())
+            apply()
+        }
+    }
+
+    // Update balance and transactions (for external calls)
+    fun updateBalance(newBalance: Double, type: String, amount: Double) {
+        _balance.value = newBalance
+        saveBalance(newBalance)  // Save new balance
+
+        val timestamp = System.currentTimeMillis().let {
+            java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(it)
+        }
+
+        val category = if (type == "Polog") "Income" else "Expense"
+        val transaction = Transaction(type = type, amount = amount, timestamp = timestamp, category = category)
+        addTransaction(transaction)
+    }
+
+    // Get transactions by category (Income or Expense)
+    fun getTransactionsByCategory(category: String): List<Transaction> {
+        return _transactions.value.filter { it.category == category }
+    }
+
+    // Get the sum of all deposits
     fun getDepositSum(): Double {
         return _transactions.value.filter { it.type == "Polog" }
             .sumOf { it.amount }
     }
 
+    // Get the sum of all withdrawals
     fun getWithdrawalSum(): Double {
         return _transactions.value.filter { it.type == "Dvig" }
             .sumOf { it.amount }
+    }
+
+    // Get all deposit transactions
+    fun getDepositTransactions(): List<Transaction> {
+        return _transactions.value.filter { it.type == "Polog" }
+    }
+
+    // Get all withdrawal transactions
+    fun getWithdrawalTransactions(): List<Transaction> {
+        return _transactions.value.filter { it.type == "Dvig" }
     }
 }

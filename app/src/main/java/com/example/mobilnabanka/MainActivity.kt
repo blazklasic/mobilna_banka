@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,13 +28,18 @@ import androidx.navigation.compose.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModelProvider
+import com.example.mobilnabanka.model.User
 import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
+import com.example.mobilnabanka.viewmodel.MainViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,14 +48,43 @@ class MainActivity : ComponentActivity() {
         BankAccountViewModel(applicationContext)
     }
 
+    private lateinit var viewModel: MainViewModel
     private lateinit var sharedPreferences: SharedPreferences
     private var savedAccountNumber: String? = null
     var showDialog by mutableStateOf(false)
+
+    private var userId: Int? = null  // Declare userId here for accessibility
 
     @RequiresApi(Build.VERSION_CODES.GINGERBREAD)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize SharedPreferences here instead of onStart()
+        sharedPreferences = getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
+
+        // Initialize ViewModel
+        viewModel = ViewModelProvider(this).get(MainViewModel::class.java)
+
+        // Retrieve userId from shared preferences
+        val userIdString = sharedPreferences.getString("user_id", null)
+
+        // Safely convert the userIdString to an Integer
+        val userId = userIdString?.toIntOrNull()
+
+        if (userId != null) {
+            // If userId is not null, fetch user transactions
+            viewModel.fetchUserTransactions(userId)
+        } else {
+            // Handle the case when userId is null
+            Log.e("MainActivity", "User ID is not available!")
+        }
+
+        // Fetch other data
+        viewModel.fetchUsers()
+
+        // Determine initial destination
+        val startDestination = if (viewModel.isUserLoggedIn) "bank_account_screen" else "login_screen"
 
         setContent {
             MobilnaBankaTheme {
@@ -55,7 +92,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavHost(
                         navController = navController,
-                        startDestination = if (savedAccountNumber != null) "bank_account_screen" else "login_screen"
+                        startDestination = startDestination
                     ) {
                         composable("login_screen") {
                             LoginScreen(navController)
@@ -66,10 +103,40 @@ class MainActivity : ComponentActivity() {
                         composable("transaction_screen") {
                             TransactionScreen(bankAccountViewModel, navController)
                         }
+                        composable("users_screen") {
+                            UsersList(viewModel) // Show users list
+                        }
                     }
                 }
                 if (showDialog) {
                     ShowSaveDeleteDialog(onDismiss = { showDialog = false })
+                }
+            }
+        }
+    }
+
+
+    @Composable
+    fun UsersList(viewModel: MainViewModel) {
+        val users by viewModel.users.observeAsState(emptyList()) // Convert LiveData to State
+        LazyColumn {
+            items(users) { user ->
+                Text(text = "Ime: ${user.name}, Email: ${user.email}")
+            }
+        }
+    }
+
+    @Composable
+    fun UserTransactionList(viewModel: MainViewModel) {
+        val transactions by viewModel.transactions.observeAsState(emptyList()) // Correctly named `transactions`
+        LazyColumn {
+            items(transactions) { transaction ->
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(text = "Transakcija ID: ${transaction.id}")
+                    Text(text = "Uporabnik ID: ${transaction.userId}")
+                    Text(text = "Znesek: ${transaction.amount}€")
+                    Text(text = "Tip: ${transaction.type}")
+                    Text(text = "Čas: ${transaction.timestamp}")
                 }
             }
         }

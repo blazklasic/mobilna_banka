@@ -72,8 +72,4 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             fetchUserTransactions(transaction.userId) // Refresh the transactions
         }
     }
-
-    fun toggleDialog(show: Boolean) {
-        _showDialog.value = show
-    }
 }

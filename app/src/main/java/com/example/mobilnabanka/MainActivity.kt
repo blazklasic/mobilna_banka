@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -11,7 +12,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,23 +26,47 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
+import androidx.navigation.NavController
+import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
+import com.google.android.gms.location.LocationServices
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import android.Manifest
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.navigation.NavController
-import com.example.mobilnabanka.ui.theme.MobilnaBankaTheme
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.api.IMapController
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Overlay
+import androidx.compose.ui.graphics.toArgb
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.Query
+
+
+interface CurrencyApiService {
+    @GET("v4/latest/EUR")
+    suspend fun getExchangeRate(@Query("apikey") apiKey: String): CurrencyExchangeResponse
+}
+
+data class CurrencyExchangeResponse(
+    val rates: Map<String, Double>
+)
+
+object CurrencyApiClient {
+    private val retrofit = Retrofit.Builder()
+        .baseUrl("https://api.exchangerate-api.com/")
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    val service: CurrencyApiService = retrofit.create(CurrencyApiService::class.java)
+}
 
 class MainActivity : ComponentActivity() {
     private val bankAccountViewModel: BankAccountViewModel by lazy {
@@ -78,6 +102,9 @@ class MainActivity : ComponentActivity() {
                         composable("osm_map_screen") {
                             OpenStreetMapScreen(navController)
                         }
+                        composable("currency_converter"){
+                            CurrencyConverterScreen(navController, bankAccountViewModel)
+                        }
                     }
                 }
                 if (showDialog) {
@@ -102,6 +129,27 @@ class MainActivity : ComponentActivity() {
 }
 @Composable
 fun OpenStreetMapScreen(navController: NavController) {
+    val context = LocalContext.current
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    val currentLocation = remember { mutableStateOf(GeoPoint(46.0511, 14.5051)) }
+
+    LaunchedEffect(Unit) {
+        if (ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                location?.let {
+                    currentLocation.value = GeoPoint(location.latitude, location.longitude)
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { context ->
@@ -110,7 +158,7 @@ fun OpenStreetMapScreen(navController: NavController) {
                 mapView.setMultiTouchControls(true)
 
                 mapView.controller.setZoom(12)
-                mapView.controller.setCenter(GeoPoint(46.0511, 14.5051))
+                mapView.controller.setCenter(currentLocation.value)
 
                 mapView
             },
@@ -119,7 +167,6 @@ fun OpenStreetMapScreen(navController: NavController) {
                 .fillMaxWidth()
         )
 
-        // Gumb za nazaj
         Button(
             onClick = { navController.popBackStack() },
             modifier = Modifier
@@ -247,6 +294,7 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
 
     var userInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
+    var userInputEur by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -367,9 +415,86 @@ fun BankAccountScreen(innerPadding: PaddingValues, bankAccountViewModel: BankAcc
             ) {
                 Text(text = "Odpri OpenStreetMap")
             }
+            Button(
+                onClick = {navController.navigate("currency_converter")} ,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+            ){
+                Text(text = "Odpri menjalnico")
+            }
         }
     }
 }
+@Composable
+fun CurrencyConverterScreen(navController: NavHostController, bankAccountViewModel: BankAccountViewModel) {
+    var userInputEur by remember { mutableStateOf("") }
+    var userInputUsd by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
+
+    Scaffold() { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp)
+        ) {
+
+            OutlinedTextField(
+                value = userInputEur,
+                onValueChange = { userInputEur = it },
+                label = { Text("Vnesite vsoto v EUR") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = userInputUsd,
+                onValueChange = { },
+                label = { Text("Vrednost v USD") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = false
+            )
+
+            Button(
+                onClick = {
+                    val amountEur = userInputEur.toDoubleOrNull()
+                    if (amountEur != null && amountEur > 0) {
+
+                        bankAccountViewModel.convertEuroToUSD(amountEur) { usdAmount ->
+                            if (usdAmount != null) {
+                                userInputUsd = "%.2f".format(usdAmount)
+                            } else {
+                                errorMessage = "Napaka pri pridobivanju tečajev."
+                            }
+                        }
+                    } else {
+                        errorMessage = "Prosim vnesite veljavno število v EUR."
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
+                Text(text = "Pretvori v USD")
+            }
+            Button(
+                onClick = { navController.popBackStack() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("Nazaj")
+            }
+
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = Color.Red,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -406,7 +531,7 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Menu action */ }) {
+                    IconButton(onClick = {  }) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
                             contentDescription = "Menu"
@@ -422,14 +547,12 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
-            // Display current balance
             Text(
                 text = "Trenutno stanje: ${"%.2f".format(balance)}€",
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            // Show deposit total
             Text(
                 text = "Skupni znesek pologov: ${"%.2f".format(depositSum)}€",
                 style = MaterialTheme.typography.bodyLarge,
@@ -443,7 +566,6 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 Text(if (showDeposits) "Skrij pologe" else "Pokaži pologe")
             }
 
-            // Show deposits only if showDeposits is true
             if (showDeposits) {
                 bankAccountViewModel.getDepositTransactions().reversed().forEach { transaction ->
                     Text(
@@ -456,7 +578,6 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Show withdrawal total
             Text(
                 text = "Skupni znesek dvigov: ${"%.2f".format(withdrawalSum)}€",
                 style = MaterialTheme.typography.bodyLarge,
@@ -470,7 +591,6 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                 Text(if (showWithdrawals) "Skrij dvige" else "Pokaži dvige")
             }
 
-            // Show withdrawals only if showWithdrawals is true
             if (showWithdrawals) {
                 bankAccountViewModel.getWithdrawalTransactions().reversed().forEach { transaction ->
                     Text(
@@ -480,9 +600,74 @@ fun TransactionScreen(bankAccountViewModel: BankAccountViewModel, navController:
                     )
                 }
             }
+            BarChart(
+                depositSum = depositSum,
+                withdrawalSum = withdrawalSum,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .padding(start = 65.dp)
+            )
         }
     }
 }
+@Composable
+fun TransactionList(transactions: List<Transaction>, filterCategory: String? = null) {
+    val filteredTransactions = filterCategory?.let {
+        transactions.filter { it.type == filterCategory }
+    } ?: transactions
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        filteredTransactions.forEach { transaction ->
+            Text(
+                text = "${transaction.type}: ${"%.2f".format(transaction.amount)}€ - ${transaction.timestamp}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun BarChart(depositSum: Double, withdrawalSum: Double, modifier: Modifier = Modifier) {
+    val data = listOf(
+        BarData("Pologi", depositSum),
+        BarData("Dvigi", withdrawalSum)
+    )
+
+    Canvas(modifier = modifier) {
+        val maxValue = data.maxOfOrNull { it.value } ?: 1.0
+        val barWidth = size.width / (data.size * 2)
+        val spaceBetweenBars = barWidth
+
+        data.forEachIndexed { index, item ->
+            val barHeight = size.height * (item.value / maxValue)
+            val barLeft = index * (barWidth * 2)
+            val barTop = size.height - barHeight
+
+            drawRect(
+                color = if (item.category == "Pologi") Color.Green else Color.Red,
+                topLeft = Offset(barLeft, barTop.toFloat()),
+                size = Size(barWidth, barHeight.toFloat())
+            )
+
+            drawIntoCanvas { canvas ->
+                val paint = android.text.TextPaint().apply {
+                    color = Color.Black.toArgb()
+                    textSize = 40f
+                }
+
+                canvas.nativeCanvas.drawText(
+                    item.category,
+                    barLeft + barWidth / 2,
+                    size.height - 10f,
+                    paint
+                )
+            }
+        }
+    }
+}
+
 data class BarData(val category: String, val value: Double)
 
 data class Transaction(val type: String, val amount: Double, val timestamp: String, val category: String)
@@ -490,7 +675,7 @@ data class Account(val name: String, val balance: Double)
 
 class BankAccountViewModel(private val context: Context) : ViewModel() {
 
-    private val _balance = MutableStateFlow(500.0) // Default balance
+    private val _balance = MutableStateFlow(500.0)
     val balance: StateFlow<Double> = _balance
 
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
@@ -505,10 +690,9 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
     val accounts: StateFlow<List<Account>> = _accounts
 
     init {
-        _accounts.value = loadAccounts()  // Load saved accounts on initialization
+        _accounts.value = loadAccounts()
     }
 
-    // Load accounts from SharedPreferences
     private fun loadAccounts(): List<Account> {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         val savedAccounts = sharedPreferences.getStringSet("accounts", emptySet())
@@ -520,7 +704,6 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         } ?: emptyList()
     }
 
-    // Save accounts to SharedPreferences
     private fun saveAccounts() {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         with(sharedPreferences.edit()) {
@@ -531,59 +714,78 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    // Add a new account
     fun addAccount(name: String, balance: Double) {
         val newAccount = Account(name, balance)
         _accounts.value = _accounts.value + newAccount
-        saveAccounts()  // Save after adding the account
+        saveAccounts()
     }
 
-    // Update the balance of an existing account
     fun updateAccountBalance(name: String, newBalance: Double) {
         _accounts.value = _accounts.value.map {
             if (it.name == name) {
-                it.copy(balance = newBalance)  // Update balance using copy
+                it.copy(balance = newBalance)
             } else {
                 it
             }
         }
-        saveAccounts()  // Save after updating the balance
+        saveAccounts()
+    }
+    suspend fun convertEurToUsd(amountEur: Double, onConversionComplete: (Double?) -> Unit) {
+        try {
+            val response = CurrencyApiClient.service.getExchangeRate("51dd8350c106bb0f459783ab")
+            val usdRate = response.rates["USD"]
+
+            if (usdRate != null) {
+                val usdAmount = amountEur * usdRate
+                onConversionComplete(usdAmount)
+            } else {
+                onConversionComplete(null)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onConversionComplete(null)
+        }
+    }
+    fun convertEuroToUSD(amountEur: Double, onConversionComplete: (Double?) -> Unit){
+        try{
+            if (amountEur != null){
+                val usdAmount = amountEur * 1.03
+                onConversionComplete(usdAmount)
+            }
+        }catch (e: Exception){
+            e.printStackTrace()
+            onConversionComplete(null)
+        }
     }
 
-    // Get account by name
     fun getAccountByName(name: String): Account? {
         return _accounts.value.find { it.name == name }
     }
 
-    // Add deposit to a specific account
     fun addDepositToAccount(name: String, amount: Double) {
         val account = getAccountByName(name)
         if (account != null) {
             val updatedBalance = account.balance + amount
-            updateAccountBalance(name, updatedBalance)  // Update balance
+            updateAccountBalance(name, updatedBalance)
         }
     }
 
-    // Add withdrawal from a specific account
     fun addWithdrawalFromAccount(name: String, amount: Double) {
         val account = getAccountByName(name)
         if (account != null) {
             val updatedBalance = account.balance - amount
             if (updatedBalance >= 0) {
-                updateAccountBalance(name, updatedBalance)  // Update balance
+                updateAccountBalance(name, updatedBalance)
             } else {
-                // Handle insufficient balance case
                 println("Insufficient balance for withdrawal!")
             }
         }
     }
-    // Load the initial balance from SharedPreferences
     private fun loadBalance(): Double {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         return sharedPreferences.getFloat("stanje", 500.0f).toDouble()
     }
 
-    // Load transactions from SharedPreferences
     private fun loadTransactions(): List<Transaction> {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         val savedTransactions = sharedPreferences.getStringSet("transakcije", emptySet())
@@ -594,29 +796,25 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         } ?: emptyList()
     }
 
-    // Add a deposit transaction and update the balance
     fun addDeposit(amount: Double, timestamp: String) {
         val transaction = Transaction("Polog", amount, timestamp, "Income")
         addTransaction(transaction)
         _balance.value += amount
-        saveBalance(_balance.value)  // Save balance after update
+        saveBalance(_balance.value)
     }
 
-    // Add a withdrawal transaction and update the balance
     fun addWithdrawal(amount: Double, timestamp: String) {
         val transaction = Transaction("Dvig", amount, timestamp, "Expense")
         addTransaction(transaction)
         _balance.value -= amount
-        saveBalance(_balance.value)  // Save balance after update
+        saveBalance(_balance.value)
     }
 
-    // Save a transaction to the list
     private fun addTransaction(transaction: Transaction) {
         _transactions.value = _transactions.value + transaction
         saveTransactions()
     }
 
-    // Save transactions to SharedPreferences
     private fun saveTransactions() {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         with(sharedPreferences.edit()) {
@@ -627,7 +825,6 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    // Save the current balance to SharedPreferences
     private fun saveBalance(stanje: Double) {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
         with(sharedPreferences.edit()) {
@@ -636,10 +833,9 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    // Update balance and transactions (for external calls)
     fun updateBalance(newBalance: Double, type: String, amount: Double) {
         _balance.value = newBalance
-        saveBalance(newBalance)  // Save new balance
+        saveBalance(newBalance)
 
         val timestamp = System.currentTimeMillis().let {
             java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(it)
@@ -650,29 +846,24 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         addTransaction(transaction)
     }
 
-    // Get transactions by category (Income or Expense)
     fun getTransactionsByCategory(category: String): List<Transaction> {
         return _transactions.value.filter { it.category == category }
     }
 
-    // Get the sum of all deposits
     fun getDepositSum(): Double {
         return _transactions.value.filter { it.type == "Polog" }
             .sumOf { it.amount }
     }
 
-    // Get the sum of all withdrawals
     fun getWithdrawalSum(): Double {
         return _transactions.value.filter { it.type == "Dvig" }
             .sumOf { it.amount }
     }
 
-    // Get all deposit transactions
     fun getDepositTransactions(): List<Transaction> {
         return _transactions.value.filter { it.type == "Polog" }
     }
 
-    // Get all withdrawal transactions
     fun getWithdrawalTransactions(): List<Transaction> {
         return _transactions.value.filter { it.type == "Dvig" }
     }

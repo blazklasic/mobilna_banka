@@ -19,6 +19,6 @@ data class UserTransaction(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val amount: Double,
     val timestamp: String,
-    val type: String, // "Deposit" or "Withdrawal"
+    val type: String, // "Polog" ali "Dvig"
     val userId: Int
 )

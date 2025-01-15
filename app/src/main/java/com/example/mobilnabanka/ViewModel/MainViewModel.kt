@@ -62,7 +62,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addUser(user: User) {
         viewModelScope.launch {
             repository.insertUser(user)
-            fetchUsers() // Refresh the user list
+            fetchUsers()
         }
     }
 

@@ -15,14 +15,14 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val sharedPreferences = application.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
-    private val appDatabase = AppDatabase.getInstance(application) // Singleton initialization
+    private val appDatabase = AppDatabase.getInstance(application)
     private val userDao = appDatabase.userDao()
     private val transactionDao = appDatabase.transactionDao()
 
     val isUserLoggedIn: Boolean
         get() = sharedPreferences.getString("account_number", null) != null
 
-    private val repository: Repository = Repository(appDatabase) // Pass the database instance directly
+    private val repository: Repository = Repository(appDatabase)
 
     private val _users = MutableLiveData<List<User>>()
     val users: LiveData<List<User>> get() = _users
@@ -69,7 +69,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addTransaction(transaction: UserTransaction) {
         viewModelScope.launch {
             repository.insertTransaction(transaction)
-            fetchUserTransactions(transaction.userId) // Refresh the transactions
+            fetchUserTransactions(transaction.userId)
         }
     }
     fun toggleDialog(show: Boolean) {

@@ -2,6 +2,7 @@ package com.example.mobilnabanka.ViewModel
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.example.mobilnabanka.CurrencyApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -37,17 +38,6 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
         } ?: emptyList()
     }
 
-    fun convertEuroToUSD(amountEur: Double, onConversionComplete: (Double?) -> Unit){
-        try{
-            if (amountEur != null){
-                val usdAmount = amountEur * 1.03
-                onConversionComplete(usdAmount)
-            }
-        }catch (e: Exception){
-            e.printStackTrace()
-            onConversionComplete(null)
-        }
-    }
 
     private fun loadBalance(): Double {
         val sharedPreferences = context.getSharedPreferences("MobilnaBanka", Context.MODE_PRIVATE)
@@ -67,6 +57,22 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
     private fun addTransaction(transaction: Transaction) {
         _transactions.value = _transactions.value + transaction
         saveTransactions()
+    }
+    suspend fun convertEurToUsd(amountEur: Double, onConversionComplete: (Double?) -> Unit) {
+        try {
+            val response = CurrencyApiClient.service.getExchangeRate("51dd8350c106bb0f459783ab")
+            val usdRate = response.rates["USD"]
+
+            if (usdRate != null) {
+                val usdAmount = amountEur * usdRate
+                onConversionComplete(usdAmount)
+            } else {
+                onConversionComplete(null)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onConversionComplete(null)
+        }
     }
 
     private fun saveTransactions() {
@@ -116,5 +122,21 @@ class BankAccountViewModel(private val context: Context) : ViewModel() {
 
     fun getWithdrawalTransactions(): List<Transaction> {
         return _transactions.value.filter { it.type == "Dvig" }
+    }
+
+    fun convertEuroToUSD(amountEur: Double, onConversionComplete: (Double?) -> Unit){
+        try{
+            if (amountEur != null){
+                val usdAmount = amountEur * 1.03
+                onConversionComplete(usdAmount)
+            }
+        }catch (e: Exception){
+            e.printStackTrace()
+            onConversionComplete(null)
+        }
+    }
+
+    suspend fun callApi(){
+        convertEurToUsd(0.12, onConversionComplete = {})
     }
 }
